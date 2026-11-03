@@ -1,5 +1,8 @@
 # SecondBrain
 
+[![ci](https://github.com/zhm0531/secondbrain/actions/workflows/ci.yml/badge.svg)](https://github.com/zhm0531/secondbrain/actions/workflows/ci.yml)
+[![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+
 Local-first cross-agent memory: Markdown on disk, SQLite index, one HTTP core, and thin MCP
 adapters for Codex and DeepSeek Harness.
 
