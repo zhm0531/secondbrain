@@ -1,0 +1,7 @@
+interface:
+  display_name: "SecondBrain"
+  short_description: "跨 Agent 的本地长期记忆、会话内容和候选记忆管理工具"
+  default_prompt: "Use $secondbrain to load relevant memories and manage cross-agent memory."
+
+policy:
+  allow_implicit_invocation: true

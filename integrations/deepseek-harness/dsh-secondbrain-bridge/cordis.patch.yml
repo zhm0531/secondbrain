@@ -1,0 +1,25 @@
+# Mount the local SecondBrain Core as a native MCP server in DeepSeek Harness.
+- insert:
+    - id: secondbrain-bridge
+      name: dsh-secondbrain-bridge
+    - id: secondbrain-mcp
+      name: '@deepseek-ai/dsh-mcp-client'
+      inject: [secondBrainBridge]
+      config:
+        transport: stdio
+        serverName: !!js process.env.SECONDBRAIN_MCP_SERVER ?? 'secondbrain'
+        command: !!js ctx.secondBrainBridge.python
+        args:
+          - !!js ctx.secondBrainBridge.runner
+        cwd: !!js ctx.secondBrainBridge.cwd
+        env:
+          SECONDBRAIN_URL: !!js ctx.secondBrainBridge.url
+          SECONDBRAIN_PROJECT: 'C:/Users/zhm0531/OneDrive/文档/ChatGPT/记忆管理skill(自制，2026.11.1）'
+          SECONDBRAIN_ROOT: !!js ctx.secondBrainBridge.root
+          SECONDBRAIN_AUTOSTART: !!js ctx.secondBrainBridge.autostart
+        failOnStartupError: false
+        reconnect:
+          enabled: true
+          initialDelayMs: 3000
+          maxDelayMs: 30000
+          maxAttempts: 100000

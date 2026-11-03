@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "secondbrain-core"
+version = "0.1.0"
+description = "Local-first cross-agent memory: Markdown storage, SQLite index, HTTP core, and MCP adapters."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "SecondBrain contributors" }]
+keywords = ["memory", "agents", "markdown", "sqlite", "mcp"]
+dependencies = ["PyYAML>=6.0"]
+
+[project.scripts]
+secondbrain = "secondbrain_core.cli:main"
+
+[tool.setuptools]
+packages = ["secondbrain_core"]
+
+[tool.setuptools.package-data]
+secondbrain_core = ["web/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

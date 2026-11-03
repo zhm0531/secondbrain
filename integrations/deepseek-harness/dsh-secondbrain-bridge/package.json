@@ -1,0 +1,21 @@
+{
+  "name": "dsh-secondbrain-bridge",
+  "version": "0.1.0",
+  "description": "DeepSeek Harness bundle that exposes SecondBrain Core memory tools over MCP.",
+  "type": "module",
+  "main": "index.js",
+  "files": [
+    "index.js",
+    "cordis.patch.yml",
+    "scripts/"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
