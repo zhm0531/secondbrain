@@ -65,6 +65,72 @@ function makeMeta(label, value) {
   return item;
 }
 
+function conflictReason(item) {
+  if (item.reason) return item.reason;
+  const overlap = Number.isFinite(Number(item.overlap)) ? `${Math.round(Number(item.overlap) * 100)}%` : "较高比例";
+  return `同一生效范围和记忆类型，正文词语重叠约 ${overlap}`;
+}
+
+function closeConflictDialog() {
+  $("conflict-dialog").classList.add("hidden");
+  $("conflict-list").replaceChildren();
+}
+
+function renderConflictDialog(record, conflicts) {
+  $("conflict-dialog-title").textContent = `记忆 ${record.memory_number || record.memory_id} 的冲突`;
+  $("conflict-dialog-intro").textContent = conflicts.length
+    ? `检测到 ${conflicts.length} 条可能冲突的记忆。以下编号和理由仅用于辅助审核。`
+    : "未发现潜在冲突。";
+  const list = $("conflict-list");
+  list.replaceChildren();
+  if (!conflicts.length) {
+    const empty = document.createElement("p");
+    empty.className = "muted";
+    empty.textContent = "这条记忆目前没有匹配到潜在冲突。";
+    list.appendChild(empty);
+  }
+  for (const conflict of conflicts) {
+    const item = document.createElement("article");
+    item.className = "conflict-item";
+    const header = document.createElement("div");
+    header.className = "conflict-item-header";
+    const number = document.createElement("strong");
+    number.textContent = conflict.memory_number || conflict.memory_id;
+    const view = document.createElement("button");
+    view.type = "button";
+    view.className = "button secondary conflict-view-button";
+    view.textContent = "查看记忆";
+    view.addEventListener("click", async () => {
+      closeConflictDialog();
+      await selectMemory(conflict.memory_id);
+    });
+    header.append(number, view);
+    const content = document.createElement("p");
+    const text = conflict.content || "（无正文）";
+    content.textContent = text.length > 180 ? `${text.slice(0, 180)}…` : text;
+    const reason = document.createElement("p");
+    reason.className = "conflict-reason";
+    reason.textContent = `理由：${conflictReason(conflict)}`;
+    item.append(header, content, reason);
+    list.appendChild(item);
+  }
+  $("conflict-dialog").classList.remove("hidden");
+}
+
+async function showConflicts(memory) {
+  try {
+    const params = new URLSearchParams({
+      content: memory.content || "",
+      scope: memory.scope || "",
+      memory_type: memory.memory_type || "",
+    });
+    const data = await api(`/api/memories/conflicts?${params.toString()}`);
+    renderConflictDialog(memory, data.items || []);
+  } catch (error) {
+    setMessage(error.message, true);
+  }
+}
+
 function renderList(items) {
   state.items = items;
   const list = $("memory-list");
@@ -88,8 +154,20 @@ function renderList(items) {
     const content = item.content || "（无正文）";
     title.textContent = content.length > 100 ? `${content.slice(0, 100)}…` : content;
     const summary = document.createElement("p");
-    summary.textContent = `${typeLabels[item.memory_type] || item.memory_type} · ${scopeLabels[item.scope] || item.scope}${item.has_conflicts ? ` · ⚠ 可能冲突（${item.conflict_count}）` : ""}`;
+    summary.textContent = `${typeLabels[item.memory_type] || item.memory_type} · ${scopeLabels[item.scope] || item.scope}`;
     if (item.has_conflicts) summary.style.color = "#b45309";
+    if (item.has_conflicts) {
+      const warning = document.createElement("button");
+      warning.type = "button";
+      warning.className = "conflict-link";
+      warning.textContent = `⚠ 可能冲突（${item.conflict_count}）`;
+      warning.setAttribute("aria-label", `查看 ${item.conflict_count} 条可能冲突记忆`);
+      warning.addEventListener("click", (event) => {
+        event.stopPropagation();
+        showConflicts(item);
+      });
+      summary.append(document.createTextNode(" · "), warning);
+    }
     card.append(badge, title, summary);
     list.appendChild(card);
   }
@@ -219,6 +297,13 @@ $("approve-button").addEventListener("click", () => transitionMemory("approve"))
 $("reject-button").addEventListener("click", () => transitionMemory("reject"));
 $("archive-button").addEventListener("click", () => transitionMemory("archive"));
 $("create-form").addEventListener("submit", createMemory);
+$("close-conflict-dialog").addEventListener("click", closeConflictDialog);
+$("conflict-dialog").addEventListener("click", (event) => {
+  if (event.target === $("conflict-dialog")) closeConflictDialog();
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") closeConflictDialog();
+});
 document.querySelectorAll(".help-button").forEach((button) => {
   button.addEventListener("click", (event) => {
     event.stopPropagation();

@@ -340,6 +340,11 @@ class SecondBrainService:
     def _normalized_content(value: str) -> str:
         return re.sub(r"\s+", " ", value).strip().casefold()
 
+    @staticmethod
+    def _conflict_reason(scope: str, memory_type: str | None, overlap: float) -> str:
+        type_text = memory_type or "记忆"
+        return f"同一生效范围（{scope}）和{type_text}类型，正文词语重叠约 {round(overlap * 100)}%"
+
     def find_similar_memories(self, content: str, *, scope: str | None = None, limit: int = 10) -> list[dict[str, Any]]:
         target = self._normalized_content(content)
         candidates = self.db.search_memories("", scope=scope, statuses=("active", "candidate"), limit=500)
@@ -361,8 +366,40 @@ class SecondBrainService:
             other = set(re.findall(r"[\w\u4e00-\u9fff]+", item["content"].casefold()))
             overlap = len(words & other) / max(1, min(len(words), len(other)))
             if overlap >= 0.4 and self._normalized_content(content) != self._normalized_content(item["content"]):
-                matches.append({**item, "overlap": round(overlap, 3)})
+                matches.append({
+                    **item,
+                    "overlap": round(overlap, 3),
+                    "reason": self._conflict_reason(scope, memory_type or item["memory_type"], overlap),
+                })
         return matches
+
+    def find_duplicate_groups(self, *, statuses: tuple[str, ...] = ("active",)) -> list[dict[str, Any]]:
+        """Group memories whose normalized content is exactly identical."""
+        items = self.db.search_memories("", statuses=statuses, limit=5000)
+        groups: dict[str, list[dict[str, Any]]] = {}
+        for item in items:
+            groups.setdefault(self._normalized_content(item["content"]), []).append(item)
+        result = []
+        for group in groups.values():
+            if len(group) < 2:
+                continue
+            result.append({
+                "content": group[0]["content"],
+                "count": len(group),
+                "memory_numbers": [item.get("memory_number") for item in group],
+                "memory_ids": [item["memory_id"] for item in group],
+                "items": [
+                    {
+                        "memory_id": item["memory_id"],
+                        "memory_number": item.get("memory_number"),
+                        "status": item["status"],
+                        "scope": item["scope"],
+                        "updated_at": item["updated_at"],
+                    }
+                    for item in group
+                ],
+            })
+        return result
 
     def propose_memory(self, **kwargs: Any) -> dict[str, Any]:
         memory = self.create_memory(**kwargs, status="candidate")
@@ -465,7 +502,14 @@ class SecondBrainService:
                 pair = tuple(sorted((item["memory_id"], other["memory_id"])))
                 if pair not in seen:
                     seen.add(pair)
-                    conflicts.append({"memory_id": item["memory_id"], "conflict_with": other["memory_id"], "overlap": other.get("overlap")})
+                    conflicts.append({
+                        "memory_id": item["memory_id"],
+                        "memory_number": item.get("memory_number"),
+                        "conflict_with": other["memory_id"],
+                        "conflict_with_number": other.get("memory_number"),
+                        "overlap": other.get("overlap"),
+                        "reason": other.get("reason"),
+                    })
             if item["scope"] == "agent" and not item.get("agent_id"):
                 pollution.append({"memory_id": item["memory_id"], "issue": "agent scope missing agent_id"})
             if item["scope"] == "project" and not item.get("project_id"):
@@ -474,7 +518,12 @@ class SecondBrainService:
                 pollution.append({"memory_id": item["memory_id"], "issue": "session scope missing source_session_id"})
             if not item.get("agent_id") or not item.get("source_session_id"):
                 pollution.append({"memory_id": item["memory_id"], "issue": "missing provenance"})
-        return {"active_count": len(active), "conflicts": conflicts, "pollution": pollution}
+        return {
+            "active_count": len(active),
+            "duplicates": self.find_duplicate_groups(statuses=("active",)),
+            "conflicts": conflicts,
+            "pollution": pollution,
+        }
 
     def update_memory(
         self,

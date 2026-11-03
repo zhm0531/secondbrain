@@ -33,6 +33,11 @@ Recognize these user-facing forms:
 - `@SecondBrain reject <memory-id>` — reject a candidate.
 - `@SecondBrain replace <memory-id>` — save a new version and automatically supersede the old memory.
 - `@SecondBrain status` — report connection and current context.
+- `@SecondBrain check all` — audit active memories for conflicts, exact repetitions, and provenance issues.
+- `@SecondBrain check conflicts` — report potentially conflicting active memory pairs with their numbers and reasons.
+- `@SecondBrain check duplicates` — report groups of active memories with identical normalized content.
+
+The check command also accepts singular or natural variants such as `check conflict`, `check repetition`, and `check repetitions`; map them to the closest check mode.
 
 The host may expose the skill as `$secondbrain`, a tool, a command, or a natural-language trigger. Map the host-specific trigger to the same operations rather than creating a second memory format.
 

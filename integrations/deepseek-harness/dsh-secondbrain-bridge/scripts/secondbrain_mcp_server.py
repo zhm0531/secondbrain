@@ -254,6 +254,16 @@ def tool_definitions() -> list[dict]:
             "description": "Find active memories that may conflict with a proposed statement.",
             "inputSchema": {"type": "object", "required": ["content"], "properties": {"content": {"type": "string"}, "scope": {"type": "string"}}},
         },
+        {
+            "name": "secondbrain_check",
+            "description": "Audit all active memories for conflicts, exact repetitions, and provenance pollution.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "check": {"type": "string", "enum": ["all", "conflicts", "duplicates"], "description": "Which review to return."},
+                },
+            },
+        },
     ]
 
 
@@ -305,9 +315,18 @@ def call_tool(name: str, arguments: dict) -> dict:
                 "@SecondBrain", "@SecondBrain load", "@SecondBrain search <query>",
                 "@SecondBrain propose", "@SecondBrain review", "@SecondBrain approve <memory-id>",
                 "@SecondBrain reject <memory-id>", "@SecondBrain status", "@SecondBrain help",
+                "@SecondBrain check all", "@SecondBrain check conflicts", "@SecondBrain check duplicates",
             ],
             "workflow": "load relevant active memories, propose candidates, then review and approve them",
         })
+    if name == "secondbrain_check":
+        report = core_request("POST", "/api/maintenance/audit", {})
+        check = str(arguments.get("check", "all")).lower()
+        if check == "conflicts":
+            return text_result({"active_count": report.get("active_count", 0), "conflicts": report.get("conflicts", [])})
+        if check == "duplicates":
+            return text_result({"active_count": report.get("active_count", 0), "duplicates": report.get("duplicates", [])})
+        return text_result(report)
     if name in {"secondbrain_find_duplicates", "secondbrain_find_conflicts"}:
         path = "/api/memories/duplicates" if name.endswith("duplicates") else "/api/memories/conflicts"
         params = {"content": arguments.get("content", "")}

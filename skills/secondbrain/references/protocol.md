@@ -137,7 +137,10 @@ python -m secondbrain_core.cli --root <memory-root> add-memory --content <text> 
 python -m secondbrain_core.cli --root <memory-root> approve <memory-id>
 python -m secondbrain_core.cli --root <memory-root> reject <memory-id>
 python -m secondbrain_core.cli --root <memory-root> rebuild
+python -m secondbrain_core.cli --root <memory-root> audit
 ```
+
+审查接口 `POST /api/maintenance/audit` 返回 active 记忆数量、重复分组、冲突对和来源污染记录。MCP 适配器将其映射为 `secondbrain_check`，参数 `check` 可取 `all`、`conflicts` 或 `duplicates`。
 
 命令行和 HTTP 接口都使用相同的 Core 服务逻辑。
 

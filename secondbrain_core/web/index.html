@@ -107,6 +107,19 @@
         </div>
       </section>
     </main>
+    <div id="conflict-dialog" class="dialog-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="conflict-dialog-title">
+      <section class="dialog-card">
+        <div class="dialog-header">
+          <div>
+            <p class="eyebrow">CONFLICT REVIEW</p>
+            <h2 id="conflict-dialog-title">可能冲突</h2>
+          </div>
+          <button id="close-conflict-dialog" class="icon-button" type="button" title="关闭">×</button>
+        </div>
+        <p id="conflict-dialog-intro" class="muted"></p>
+        <div id="conflict-list" class="conflict-list"></div>
+      </section>
+    </div>
     <script src="/app.js"></script>
   </body>
 </html>

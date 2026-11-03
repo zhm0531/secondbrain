@@ -109,6 +109,7 @@ python tools/sync_adapters.py --check   # 校验适配层是否漂移（CI 用�
 
 ## 文档
 
+- `CHANGELOG.md`：面向 Agent 的版本更新说明与验证结果
 - `docs/phase-1..11-*.md`：数据模型、存储格式、Core 服务、Web UI、适配层、冲突与质量、访问编号等设计记录
 - `docs/codex-plugin-packaging.md`：Codex Plugin 打包说明
 

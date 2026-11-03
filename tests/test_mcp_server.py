@@ -48,10 +48,21 @@ def test_mcp_stdio_server(tmp_path: Path) -> None:
         assert initialized["result"]["serverInfo"]["name"] == "secondbrain"
         tools = call({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}})
         assert any(tool["name"] == "secondbrain_load" for tool in tools["result"]["tools"])
-        proposed = call(
+        assert any(tool["name"] == "secondbrain_check" for tool in tools["result"]["tools"])
+        checked = call(
             {
                 "jsonrpc": "2.0",
                 "id": 3,
+                "method": "tools/call",
+                "params": {"name": "secondbrain_check", "arguments": {"check": "all"}},
+            }
+        )
+        assert checked["result"]["isError"] is False
+        assert "duplicates" in json.loads(checked["result"]["content"][0]["text"])
+        proposed = call(
+            {
+                "jsonrpc": "2.0",
+                "id": 4,
                 "method": "tools/call",
                 "params": {
                     "name": "secondbrain_propose",

@@ -80,6 +80,8 @@ textarea { resize: vertical; line-height: 1.55; }
 .memory-card:hover, .memory-card.selected { border-color: #9eb0ff; box-shadow: 0 6px 18px rgba(49, 94, 251, .12); }
 .memory-card h3 { margin: 9px 0 7px; font-size: 15px; line-height: 1.45; }
 .memory-card p { margin: 0; color: #596273; font-size: 13px; line-height: 1.5; }
+.conflict-link { padding: 0; border: 0; background: transparent; color: #b45309; font-weight: 700; text-decoration: underline; }
+.conflict-link:hover, .conflict-link:focus { color: #92400e; }
 .badge { display: inline-block; padding: 4px 8px; border-radius: 999px; background: #edf0f4; color: #5d6572; font-size: 11px; font-weight: 800; }
 .badge.active { background: #dcf6e9; color: var(--success); }
 .badge.candidate { background: #fff0cb; color: #966500; }
@@ -96,6 +98,16 @@ textarea { resize: vertical; line-height: 1.55; }
 .meta-item strong { display: block; font-size: 12px; overflow-wrap: anywhere; }
 .detail-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
 .message { min-height: 20px; margin: 12px 0 0; color: var(--muted); font-size: 13px; }
+.dialog-backdrop { position: fixed; z-index: 20; inset: 0; display: grid; place-items: center; padding: 24px; background: rgba(18, 26, 43, .42); }
+.dialog-card { width: min(680px, 100%); max-height: min(720px, 90vh); overflow: auto; padding: 24px; border: 1px solid var(--line); border-radius: 16px; background: var(--panel); box-shadow: 0 20px 60px rgba(23, 32, 42, .22); }
+.dialog-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; }
+.dialog-header h2 { margin: 8px 0 0; font-size: 20px; }
+.conflict-list { display: grid; gap: 10px; margin-top: 16px; }
+.conflict-item { padding: 14px; border: 1px solid #f0d6a1; border-radius: 10px; background: #fffaf0; }
+.conflict-item-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; color: #8a5b00; }
+.conflict-item p { margin: 10px 0 0; color: #4b5563; font-size: 13px; line-height: 1.55; }
+.conflict-item .conflict-reason { color: #8a5b00; font-size: 12px; }
+.conflict-view-button { padding: 6px 9px; font-size: 12px; }
 .hidden { display: none !important; }
 @media (max-width: 1100px) {
   .layout { grid-template-columns: 220px minmax(280px, 1fr); }
