@@ -14,7 +14,7 @@
         cwd: !!js ctx.secondBrainBridge.cwd
         env:
           SECONDBRAIN_URL: !!js ctx.secondBrainBridge.url
-          SECONDBRAIN_PROJECT: 'C:/Users/zhm0531/OneDrive/文档/ChatGPT/记忆管理skill(自制，2026.11.1）'
+          SECONDBRAIN_PROJECT: !!js process.env.SECONDBRAIN_PROJECT ?? ''
           SECONDBRAIN_ROOT: !!js ctx.secondBrainBridge.root
           SECONDBRAIN_AUTOSTART: !!js ctx.secondBrainBridge.autostart
         failOnStartupError: false

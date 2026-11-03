@@ -2,10 +2,11 @@
   "mcpServers": {
     "secondbrain": {
       "command": "python",
-      "args": ["./mcp/secondbrain_mcp_server.py"],
+      "args": [
+        "./mcp/secondbrain_mcp_server.py"
+      ],
       "env": {
         "SECONDBRAIN_URL": "http://127.0.0.1:8765",
-        "SECONDBRAIN_PROJECT": "C:/Users/zhm0531/OneDrive/文档/ChatGPT/记忆管理skill(自制，2026.11.1）",
         "SECONDBRAIN_ROOT": "memory",
         "SECONDBRAIN_AUTOSTART": "true"
       }
