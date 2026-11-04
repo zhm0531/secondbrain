@@ -25,6 +25,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("rebuild", help="rebuild the SQLite index from Markdown")
     sub.add_parser("audit", help="audit conflicts and memory pollution")
+    sub.add_parser("repair-numbers", help="renumber memories that share a duplicate #number")
     sub.add_parser("help", help="show SecondBrain commands")
     open_command = sub.add_parser("open", help="start Core if needed and open the Web UI")
     open_command.add_argument("--host", default="127.0.0.1")
@@ -140,6 +141,9 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.command == "audit":
             _json(service.audit_memories())
+            return 0
+        if args.command == "repair-numbers":
+            _json(service.repair_memory_numbers())
             return 0
         if args.command == "rebuild":
             _json(service.rebuild_index())

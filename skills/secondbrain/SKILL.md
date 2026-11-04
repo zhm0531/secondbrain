@@ -28,16 +28,21 @@ Recognize these user-facing forms:
 - `@SecondBrain search <query>` — search without changing stored data.
 - `@SecondBrain get <memory-number-or-id>` — retrieve one memory by its user-facing number or UUID.
 - `@SecondBrain propose` — extract candidate memories from the current conversation.
-- `@SecondBrain review` — show pending candidates.
+- `@SecondBrain review` — show pending candidates. Only list entries whose `status` is `candidate` (the search result also contains active memories; filter them out).
 - `@SecondBrain approve <memory-id>` — confirm a candidate.
 - `@SecondBrain reject <memory-id>` — reject a candidate.
 - `@SecondBrain replace <memory-id>` — save a new version and automatically supersede the old memory.
 - `@SecondBrain status` — report connection and current context.
+- `@SecondBrain open` — start the local Core if it is not running, then open its Web UI in the default browser.
 - `@SecondBrain check all` — audit active memories for conflicts, exact repetitions, and provenance issues.
 - `@SecondBrain check conflicts` — report potentially conflicting active memory pairs with their numbers and reasons.
 - `@SecondBrain check duplicates` — report groups of active memories with identical normalized content.
 
 The check command also accepts singular or natural variants such as `check conflict`, `check repetition`, and `check repetitions`; map them to the closest check mode.
+
+Optional flags: `--scope=<global|project|session|agent>` and `--limit=<1-100>` apply to `load`, `search`, `conflicts`, and `duplicates`; `--all` makes `search` include candidates; `--session=<id>` scopes `load`/`search` to a session so memories linked to it become visible, and it also tags `get`/`link`/`unlink` so stale-context notices stay inside that one session. Accept both `--limit=10` and `--limit 10`. Memory IDs may be written as `#000014` or as the full UUID.
+
+`open` also covers the "SecondBrain not loaded yet" case: when Core is unreachable, start it first and only then open the browser. Use the `secondbrain_open` tool when the host exposes it; otherwise run `python -m secondbrain_core.cli --root memory open` or `open_secondbrain.cmd` from the repository. If Core cannot be started, report the failure instead of opening a dead page.
 
 The host may expose the skill as `$secondbrain`, a tool, a command, or a natural-language trigger. Map the host-specific trigger to the same operations rather than creating a second memory format.
 
@@ -80,16 +85,85 @@ Use the first mode available:
 1. **Local HTTP Core**: default base URL `http://127.0.0.1:8765`; use the endpoints in [references/protocol.md](references/protocol.md).
 2. **Portable client script**: run [scripts/secondbrain_client.py](scripts/secondbrain_client.py) with Python when the host allows local scripts.
 3. **Core CLI**: use `python -m secondbrain_core.cli --root <memory-root>` when the repository is available.
+
+## Maintenance commands
+
+Memory numbers are user-visible identifiers. If two memories share one number, `get #000004` can only return one of them. Run the repair command from the repository to renumber duplicates and rebuild the index:
+
+```bash
+python -m secondbrain_core.cli --root memory repair-numbers
+```
+
+`python -m secondbrain_core.cli --root memory rebuild` also repairs duplicate numbers before indexing, so it never silently drops a memory.
 4. **Manual fallback**: explain that Core is unavailable and provide a compact candidate or load block for the user to copy. Do not claim that memory was saved when no write succeeded.
 
 If Core is unavailable, report the failed connection briefly and continue the user's task without fabricating retrieved memory.
 
-## Output rules
+## Command reply contract (mandatory)
 
-- Keep injected memory compact and relevant.
-- Label memory-derived claims when their source or confidence matters.
-- After a successful write, report the memory ID and status.
-- After a failed write, report the failure and leave the conversation usable.
-- Never expose credentials or local filesystem details that are not needed for the current operation.
+Reply to every `@SecondBrain` command with the fixed shape below and nothing else: no preamble, no restating the request, no narration of what you did, no algorithm or code explanation, no closing offer to help.
+
+- Reply in the user's language. The strings below are the Chinese originals; keep their wording fixed and only substitute the numbers, IDs, and one-line summaries.
+- First line is always the result. Then at most 5 detail lines. Total <= 8 lines and <= 120 words.
+- `help` is exempt from the line/word cap: copy the multi-line help text returned by the tool verbatim, keep its grouping and alignment, never compress it into one line or rewrite it.
+- No markdown headings, tables, code fences, bold labels, or emoji.
+- Memory line format: `- #000012 [事实·全局] 一句话摘要（<= 40 字）`
+- Status words: `生效` / `候选` / `已归档` / `已拒绝`.
+- Never expose credentials or filesystem paths the operation does not need.
+
+| Command | Reply (Chinese original) |
+| --- | --- |
+| `@SecondBrain` | `已载入 N 条相关记忆` + up to 5 memory lines; empty: `已载入 0 条相关记忆。` When an item comes back with `unlink_notice: true`, append `（本次会话已解除关联，内容可能过时）` to that line and nothing more. |
+| `@SecondBrain search <q>` | `命中 N 条` + up to 5 memory lines; empty: `命中 0 条。` Same `（本次会话已解除关联，内容可能过时）` suffix when `unlink_notice` is true. |
+| `@SecondBrain help` | verbatim copy of the tool's grouped help text (usage line, sections 读取/写入/生命周期/关联与删除/其它, then 范围/选项/示例); no re-wording, no extra explanation |
+| `@SecondBrain get <id>` | `#000012 · 事实 · 全局 · 生效` then the body as one paragraph, <= 400 chars, truncated with `…`; when `unlink_notice` is true add a final line `提示：本会话已解除对 #000012 的关联，以上内容可能过时。` |
+| `@SecondBrain review` | `候选 N 条` + up to 5 `- #000004 [事实·全局] 摘要` (only `status=candidate`); empty: `候选 0 条。` |
+| `@SecondBrain status` | `Core 在线 · 生效 13 · 候选 0 · 冲突 0 · 重复 0`；offline: `Core 离线：127.0.0.1:8765 无响应` |
+| `@SecondBrain open` | `已打开 http://127.0.0.1:8765/`；if it had to start Core: `Core 未运行，已启动后打开 http://127.0.0.1:8765/` |
+| `@SecondBrain check all` | `生效 13 · 重复 0 组 · 冲突 0 对 · 污染 11 条`, then at most 3 lines per non-empty category |
+| `@SecondBrain check conflicts` | `冲突 N 对`, then `- #000009 ↔ #000010（56%）：一句话理由`; empty: `无冲突。` |
+| `@SecondBrain check duplicates` | `重复 N 组`, then `- #000003 = #000005（2 条）`; empty: `无重复。` |
+| `@SecondBrain conflicts <内容>` | `冲突 N 对`, then `- #000015（71%）：一句话理由`; empty: `无冲突。` |
+| `@SecondBrain duplicates <内容>` | `重复 N 条`, then `- #000019（100%）[指令·全局] 摘要`; empty: `无重复。` |
+| `@SecondBrain propose` | `候选 #000014 已创建`; add only when conflicts are reported: `与 #000009 相似 56%，是否替换？` |
+| `@SecondBrain approve <id>` | `#000014 已生效。` |
+| `@SecondBrain reject <id>` | `#000014 已拒绝。` |
+| `@SecondBrain replace <id>` | `#000014 已生效；#000009 已标记 superseded。` |
+| `@SecondBrain add ... <内容>` | `已添加 #000016 · 事实 · 全局 · 生效`; warn first: `警告：与 #000012 重复（81%），未写入` + `- #000012 [事实·全局] 摘要` + `确认写入：@SecondBrain add ... --force <内容>` |
+| `@SecondBrain delete <id>` | ask first: `确认删除 #000014 [事实·全局]？` + `摘要: …` + `回复 '@SecondBrain delete #000014 --confirm' 执行；其它命令取消。`; after: `#000014 已删除。` |
+| `@SecondBrain link <id> --scope=<s> --target=<id>` | `已关联 #000014 → 项目 project_x`（`session`/`agent` 同理），then load that one memory: `#000014 · 决策 · 全局 · 生效` + body as one paragraph, <= 400 chars, truncated with `…` |
+| `@SecondBrain unlink <id> --scope=<s> --target=<id>` | `已解除 #000014 → 项目 project_x`; when the reply carries `notice: true`, add one line `提示：本会话上下文中可能仍有该记忆的旧内容，引用前请复核。` |
+
+Two cases may deviate from the shape:
+
+1. Invalid invocation: reply with the normalised usage message, never with a stack trace or invented behaviour.
+2. A decision is required: one line ending in `？`, at most 3 options, nothing else.
+
+`add` checks duplicates and conflicts before writing: when a warning is returned, print the warning block and stop; only `--force` writes anyway. `delete` never writes without `--confirm`; `link`/`unlink` report `已在范围内` / `已对该会话可见` / `不能改存储范围` instead of silently doing nothing.
+
+Stale-context notices are derived, not stored: `unlink` records the calling session in history, and later reads in that same session (only) mark the memory `unlink_notice`. A new `link` in the same session clears it, and `unlink` without `--session` produces no notice at all. Never claim the notice removes text already read into the conversation — it only flags later retrievals.
+
+## Usage errors (mandatory)
+
+Every rejected invocation must use the same linux-style three-part message, lower-case program name first:
+
+```
+secondbrain: 未知命令: 'lod'
+用法: @SecondBrain <命令> [参数...]
+提示: 可用命令: help、load、search、get、propose、review、approve、reject、archive、status、open、check、conflicts、duplicates、add、delete、link、unlink
+尝试 '@SecondBrain help' 获取完整用法。
+```
+
+Rules:
+
+- First line: `secondbrain: <原因>`; use the fixed reasons `未知命令` / `缺少参数` / `参数过多` / `未知选项` / `值无效` / `超出范围` / `无法识别的记忆编号` / `未找到记忆` / `已在生效范围内` / `已对该会话可见` / `不能解除存储范围` / `目标不存在` / `范围不匹配` / `全局记忆无需关联`.
+- Second line: `用法: <该命令的用法>`; keep the `@SecondBrain` prefix.
+- Optional third line: `提示: <可选值或下一步>`.
+- Last line is always `尝试 '@SecondBrain help' 获取完整用法。`
+- Never answer an invalid invocation by guessing the intended command, by running a different command, or by explaining the schema.
+
+Before sending, delete the first explanatory paragraph, any restatement of the request, and the final polite offer. Confirm the first line is the result and the reply is <= 8 lines.
+
+This contract covers replies to `@SecondBrain` commands only; ordinary task work is unaffected.
 
 For field definitions, lifecycle states, and examples, read [references/memory-policy.md](references/memory-policy.md).

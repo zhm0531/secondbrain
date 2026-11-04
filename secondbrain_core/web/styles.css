@@ -105,6 +105,7 @@ textarea { resize: vertical; line-height: 1.55; }
 .conflict-list { display: grid; gap: 10px; margin-top: 16px; }
 .conflict-item { padding: 14px; border: 1px solid #f0d6a1; border-radius: 10px; background: #fffaf0; }
 .conflict-item-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; color: #8a5b00; }
+.conflict-item-label { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .conflict-item p { margin: 10px 0 0; color: #4b5563; font-size: 13px; line-height: 1.55; }
 .conflict-item .conflict-reason { color: #8a5b00; font-size: 12px; }
 .conflict-view-button { padding: 6px 9px; font-size: 12px; }
@@ -118,3 +119,10 @@ textarea { resize: vertical; line-height: 1.55; }
   .layout { display: block; padding: 14px; }
   .sidebar, .list-column, .detail-column { margin-bottom: 14px; }
 }
+
+.card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.card-number { flex: none; color: #8b94a3; font-size: 12px; font-weight: 800; letter-spacing: .02em; }
+.memory-card .badge { flex: none; margin-top: 1px; }
+.relation-chip { flex: none; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 800; }
+.relation-chip.duplicate { background: #e4ecff; color: #2f56c9; }
+.relation-chip.conflict { background: #ffe6d5; color: #a34a00; }

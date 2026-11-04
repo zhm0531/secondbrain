@@ -96,6 +96,15 @@ CREATE TABLE IF NOT EXISTS events (
     FOREIGN KEY (session_id) REFERENCES sessions(session_id)
 );
 
+CREATE TABLE IF NOT EXISTS memory_links (
+    memory_id TEXT NOT NULL,
+    scope TEXT NOT NULL,
+    target_id TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (memory_id, scope, target_id),
+    FOREIGN KEY (memory_id) REFERENCES memories(memory_id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS memory_history (
     history_id TEXT PRIMARY KEY,
     memory_id TEXT NOT NULL,
@@ -111,6 +120,7 @@ CREATE INDEX IF NOT EXISTS idx_memories_scope ON memories(scope);
 CREATE INDEX IF NOT EXISTS idx_memories_project ON memories(project_id);
 CREATE INDEX IF NOT EXISTS idx_memories_agent ON memories(agent_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_id);
+CREATE INDEX IF NOT EXISTS idx_memory_links_target ON memory_links(scope, target_id);
 """
 
 
@@ -131,6 +141,7 @@ class Database:
         self.connection.close()
 
     def reset_indexes(self) -> None:
+        self.connection.execute("DELETE FROM memory_links")
         self.connection.execute("DELETE FROM memory_tags")
         self.connection.execute("DELETE FROM events")
         self.connection.execute("DELETE FROM memories")
@@ -267,6 +278,15 @@ class Database:
             "INSERT INTO memory_tags(memory_id, tag) VALUES (?, ?)",
             [(record["memory_id"], tag) for tag in record.get("tags", [])],
         )
+        self.connection.execute("DELETE FROM memory_links WHERE memory_id = ?", (record["memory_id"],))
+        self.connection.executemany(
+            "INSERT OR IGNORE INTO memory_links(memory_id, scope, target_id, created_at) VALUES (?, ?, ?, ?)",
+            [
+                (record["memory_id"], link["scope"], link["target_id"], link.get("created_at") or record["created_at"])
+                for link in record.get("links", [])
+                if link.get("scope") and link.get("target_id")
+            ],
+        )
 
     def commit(self) -> None:
         self.connection.commit()
@@ -284,6 +304,10 @@ class Database:
             "FROM projects ORDER BY name"
         ).fetchall()
         return [dict(row) for row in rows]
+
+    def get_agent(self, agent_id: str) -> dict[str, Any] | None:
+        row = self.connection.execute("SELECT * FROM agents WHERE agent_id = ?", (agent_id,)).fetchone()
+        return dict(row) if row else None
 
     def get_project(self, project_id: str) -> dict[str, Any] | None:
         row = self.connection.execute("SELECT * FROM projects WHERE project_id = ?", (project_id,)).fetchone()
@@ -342,6 +366,22 @@ class Database:
         ).fetchall()
         return [dict(row) for row in rows]
 
+    def latest_link_events(self, memory_ids: list[str]) -> dict[str, dict[str, Any]]:
+        """Return the most recent link/unlink event per memory, in insertion order."""
+        if not memory_ids:
+            return {}
+        placeholders = ",".join("?" for _ in memory_ids)
+        rows = self.connection.execute(
+            f"SELECT memory_id, action, before_json, after_json, created_at FROM memory_history "
+            f"WHERE memory_id IN ({placeholders}) AND action IN ('linked', 'unlinked') "
+            f"ORDER BY created_at ASC, rowid ASC",
+            tuple(memory_ids),
+        ).fetchall()
+        latest: dict[str, dict[str, Any]] = {}
+        for row in rows:
+            latest[row["memory_id"]] = dict(row)
+        return latest
+
     def get_memory(self, memory_id: str) -> dict[str, Any] | None:
         row = self.connection.execute(
             "SELECT * FROM memories WHERE memory_id = ?", (memory_id,)
@@ -361,15 +401,43 @@ class Database:
         row = self.connection.execute("SELECT * FROM memories WHERE memory_number = ?", (memory_number,)).fetchone()
         return dict(row) if row else None
 
+    def ensure_unique_memory_numbers(self) -> bool:
+        """尽力给 memory_number 加唯一索引；老库迁移出来的列没有该约束。"""
+
+        try:
+            self.connection.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_memories_number_unique ON memories(memory_number)"
+            )
+            self.connection.commit()
+            return True
+        except sqlite3.IntegrityError:
+            return False
+
+    def duplicate_memory_numbers(self) -> list[dict[str, Any]]:
+        rows = self.connection.execute(
+            "SELECT memory_number, COUNT(*) AS n FROM memories WHERE memory_number IS NOT NULL "
+            "GROUP BY memory_number HAVING n > 1 ORDER BY memory_number"
+        ).fetchall()
+        return [{"memory_number": row[0], "count": row[1]} for row in rows]
+
     def next_memory_number(self) -> str:
-        row = self.connection.execute("SELECT memory_number FROM memories WHERE memory_number IS NOT NULL ORDER BY rowid DESC LIMIT 1").fetchone()
+        # Use the numeric maximum instead of the last inserted row: an index rebuild
+        # re-inserts rows in arbitrary order, so "rowid DESC" would hand out numbers
+        # that already exist.
+        row = self.connection.execute(
+            "SELECT MAX(CAST(ltrim(memory_number, '#') AS INTEGER)) FROM memories WHERE memory_number IS NOT NULL"
+        ).fetchone()
         if row and row[0]:
-            try:
-                return f"#{int(str(row[0]).lstrip('#')) + 1:06d}"
-            except ValueError:
-                pass
+            return f"#{int(row[0]) + 1:06d}"
         count = self.connection.execute("SELECT COUNT(*) FROM memories").fetchone()[0]
         return f"#{count + 1:06d}"
+
+    def get_memory_links(self, memory_id: str) -> list[dict[str, Any]]:
+        rows = self.connection.execute(
+            "SELECT scope, target_id, created_at FROM memory_links WHERE memory_id = ? ORDER BY created_at",
+            (memory_id,),
+        ).fetchall()
+        return [dict(row) for row in rows]
 
     def search_memories(
         self,
@@ -378,8 +446,10 @@ class Database:
         scope: str | None = None,
         project_id: str | None = None,
         agent_id: str | None = None,
+        session_id: str | None = None,
         statuses: Iterable[str] = ("active",),
         limit: int = 50,
+        include_linked: bool = False,
     ) -> list[dict[str, Any]]:
         clauses = []
         values: list[Any] = []
@@ -410,6 +480,43 @@ class Database:
             f"SELECT * FROM memories {where} ORDER BY updated_at DESC LIMIT ?", values
         ).fetchall()
         results = [dict(row) for row in rows]
+
+        if include_linked and (session_id or project_id or agent_id):
+            link_clauses: list[str] = []
+            link_values: list[Any] = []
+            if session_id:
+                link_clauses.append("(l.scope = 'session' AND l.target_id = ?)")
+                link_values.append(session_id)
+            if project_id:
+                link_clauses.append("(l.scope = 'project' AND l.target_id = ?)")
+                link_values.append(project_id)
+            if agent_id:
+                link_clauses.append("(l.scope = 'agent' AND l.target_id = ?)")
+                link_values.append(agent_id)
+            sql = (
+                "SELECT m.* FROM memories m JOIN memory_links l ON l.memory_id = m.memory_id "
+                f"WHERE ({' OR '.join(link_clauses)})"
+            )
+            extra_values = list(link_values)
+            if query:
+                sql += " AND LOWER(m.content) LIKE LOWER(?)"
+                extra_values.append(f"%{query}%")
+            if status_values:
+                placeholders = ",".join("?" for _ in status_values)
+                sql += f" AND m.status IN ({placeholders})"
+                extra_values.extend(status_values)
+            sql += " AND (m.expires_at IS NULL OR m.expires_at > ?)"
+            extra_values.append(now)
+            sql += " ORDER BY m.updated_at DESC LIMIT ?"
+            extra_values.append(limit)
+            known = {item["memory_id"] for item in results}
+            for row in self.connection.execute(sql, extra_values).fetchall():
+                if row["memory_id"] not in known:
+                    results.append(dict(row))
+                    known.add(row["memory_id"])
+            results.sort(key=lambda item: item["updated_at"], reverse=True)
+            results = results[:limit]
+
         for result in results:
             result["tags"] = [
                 item[0]

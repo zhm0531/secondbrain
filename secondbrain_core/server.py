@@ -2,12 +2,18 @@ from __future__ import annotations
 
 import argparse
 import json
+import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from .service import SecondBrainService
+from .service import MemoryCommandError, SecondBrainService
 
+
+# SQLite connection 以 check_same_thread=False 共享；ThreadingHTTPServer 并发进入时
+# 会出现 "bad parameter or other API misuse" / "tuple index out of range"。
+# 用一把全局锁把请求串行化：单用户本地服务，代价可忽略。
+_REQUEST_LOCK = threading.Lock()
 
 WEB_ROOT = Path(__file__).parent / "web"
 STATIC_FILES = {
@@ -62,12 +68,18 @@ def make_handler(service: SecondBrainService):
         def handle_error(self, exc: Exception) -> None:
             if isinstance(exc, KeyError):
                 self.send_json(404, {"error": str(exc)})
+            elif isinstance(exc, MemoryCommandError):
+                self.send_json(400, {"error": str(exc), "code": exc.code})
             elif isinstance(exc, (ValueError, json.JSONDecodeError)):
                 self.send_json(400, {"error": str(exc)})
             else:
                 self.send_json(500, {"error": str(exc)})
 
         def do_GET(self) -> None:
+            with _REQUEST_LOCK:
+                self._do_GET()
+
+        def _do_GET(self) -> None:
             try:
                 parsed = urlparse(self.path)
                 if parsed.path == "/health":
@@ -103,6 +115,8 @@ def make_handler(service: SecondBrainService):
                         agent_id=params.get("agent_id", [None])[0],
                         statuses=statuses,
                         limit=int(params.get("limit", ["50"])[0]),
+                        session_id=params.get("request_session_id", [None])[0],
+                        include_linked=True,
                     )
                     request_agent = params.get("request_agent_id", [None])[0]
                     request_project = params.get("request_project_id", [None])[0]
@@ -143,11 +157,18 @@ def make_handler(service: SecondBrainService):
                 self.handle_error(exc)
 
         def do_POST(self) -> None:
+            with _REQUEST_LOCK:
+                self._do_POST()
+
+        def _do_POST(self) -> None:
             try:
                 parsed = urlparse(self.path)
                 payload = _json_body(self)
                 if parsed.path == "/api/index/rebuild":
                     self.send_json(200, service.rebuild_index())
+                    return
+                if parsed.path == "/api/maintenance/repair-numbers":
+                    self.send_json(200, service.repair_memory_numbers())
                     return
                 if parsed.path == "/api/maintenance/expire":
                     self.send_json(200, {"archived_memory_ids": service.expire_memories()})
@@ -157,6 +178,9 @@ def make_handler(service: SecondBrainService):
                     return
                 if parsed.path == "/api/sessions":
                     self.send_json(201, service.create_session(**payload))
+                    return
+                if parsed.path == "/api/memories/add":
+                    self.send_json(201, service.add_memory(**payload))
                     return
                 if parsed.path == "/api/memories":
                     memory = service.create_memory(**payload)
@@ -183,11 +207,31 @@ def make_handler(service: SecondBrainService):
                 if memory_id and parsed.path.endswith("/archive"):
                     self.send_json(200, service.archive_memory(memory_id.removesuffix("/archive")))
                     return
+                if memory_id and parsed.path.endswith("/link"):
+                    self.send_json(200, service.link_memory(
+                        memory_id.removesuffix("/link"),
+                        scope=str(payload.get("scope", "")),
+                        target_id=str(payload.get("target_id") or ""),
+                        session_id=payload.get("session_id"),
+                    ))
+                    return
+                if memory_id and parsed.path.endswith("/unlink"):
+                    self.send_json(200, service.unlink_memory(
+                        memory_id.removesuffix("/unlink"),
+                        scope=str(payload.get("scope", "")),
+                        target_id=str(payload.get("target_id") or ""),
+                        session_id=payload.get("session_id"),
+                    ))
+                    return
                 self.send_json(404, {"error": "route not found"})
             except Exception as exc:
                 self.handle_error(exc)
 
         def do_PATCH(self) -> None:
+            with _REQUEST_LOCK:
+                self._do_PATCH()
+
+        def _do_PATCH(self) -> None:
             try:
                 parsed = urlparse(self.path)
                 project_id = _path_id(parsed.path, "/api/projects/")
@@ -207,12 +251,20 @@ def make_handler(service: SecondBrainService):
                 self.handle_error(exc)
 
         def do_DELETE(self) -> None:
+            with _REQUEST_LOCK:
+                self._do_DELETE()
+
+        def _do_DELETE(self) -> None:
             try:
                 parsed = urlparse(self.path)
                 if parsed.path == "/api/projects/access":
                     params = parse_qs(parsed.query)
                     service.revoke_project_access(params["agent_id"][0], params["project_id"][0])
                     self.send_json(200, {"revoked": True})
+                    return
+                memory_id = _path_id(parsed.path, "/api/memories/")
+                if memory_id and "/" not in memory_id:
+                    self.send_json(200, service.delete_memory(memory_id))
                     return
                 self.send_json(404, {"error": "route not found"})
             except Exception as exc:

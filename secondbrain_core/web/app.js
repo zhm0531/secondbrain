@@ -8,6 +8,7 @@ const statusLabels = {
   rejected: "已拒绝",
 };
 const scopeLabels = { global: "全局", project: "项目内", session: "会话内", agent: "Agent 内" };
+const relationLabels = { duplicate: "重复", conflict: "冲突" };
 const typeLabels = {
   preference: "偏好",
   fact: "事实",
@@ -67,8 +68,9 @@ function makeMeta(label, value) {
 
 function conflictReason(item) {
   if (item.reason) return item.reason;
-  const overlap = Number.isFinite(Number(item.overlap)) ? `${Math.round(Number(item.overlap) * 100)}%` : "较高比例";
-  return `同一生效范围和记忆类型，正文词语重叠约 ${overlap}`;
+  const value = item.similarity ?? item.overlap;
+  const similarity = Number.isFinite(Number(value)) ? `${Math.round(Number(value) * 100)}%` : "较高比例";
+  return `同一生效范围和记忆类型，正文相似度约 ${similarity}`;
 }
 
 function closeConflictDialog() {
@@ -77,16 +79,16 @@ function closeConflictDialog() {
 }
 
 function renderConflictDialog(record, conflicts) {
-  $("conflict-dialog-title").textContent = `记忆 ${record.memory_number || record.memory_id} 的冲突`;
+  $("conflict-dialog-title").textContent = `记忆 ${record.memory_number || record.memory_id} 的可能冲突或重复`;
   $("conflict-dialog-intro").textContent = conflicts.length
-    ? `检测到 ${conflicts.length} 条可能冲突的记忆。以下编号和理由仅用于辅助审核。`
-    : "未发现潜在冲突。";
+    ? `检测到 ${conflicts.length} 条可能的冲突或重复记忆。以下编号和理由仅用于辅助审核。`
+    : "未发现可能的冲突或重复。";
   const list = $("conflict-list");
   list.replaceChildren();
   if (!conflicts.length) {
     const empty = document.createElement("p");
     empty.className = "muted";
-    empty.textContent = "这条记忆目前没有匹配到潜在冲突。";
+    empty.textContent = "这条记忆目前没有匹配到可能的冲突或重复。";
     list.appendChild(empty);
   }
   for (const conflict of conflicts) {
@@ -94,6 +96,9 @@ function renderConflictDialog(record, conflicts) {
     item.className = "conflict-item";
     const header = document.createElement("div");
     header.className = "conflict-item-header";
+    const kind = document.createElement("span");
+    kind.className = `relation-chip ${conflict.kind || "conflict"}`;
+    kind.textContent = relationLabels[conflict.kind] || "可能冲突";
     const number = document.createElement("strong");
     number.textContent = conflict.memory_number || conflict.memory_id;
     const view = document.createElement("button");
@@ -104,7 +109,10 @@ function renderConflictDialog(record, conflicts) {
       closeConflictDialog();
       await selectMemory(conflict.memory_id);
     });
-    header.append(number, view);
+    const label = document.createElement("div");
+    label.className = "conflict-item-label";
+    label.append(kind, number);
+    header.append(label, view);
     const content = document.createElement("p");
     const text = conflict.content || "（无正文）";
     content.textContent = text.length > 180 ? `${text.slice(0, 180)}…` : text;
@@ -150,8 +158,14 @@ function renderList(items) {
     const badge = document.createElement("span");
     badge.className = `badge ${item.status}`;
     badge.textContent = statusLabels[item.status] || item.status;
+    const head = document.createElement("div");
+    head.className = "card-head";
+    const number = document.createElement("span");
+    number.className = "card-number";
+    number.textContent = item.memory_number || "";
+    head.append(badge, number);
     const title = document.createElement("h3");
-    const content = item.content || "（无正文）";
+    const content = (item.content || "").split("## 审核记录")[0].trim() || "（无正文）";
     title.textContent = content.length > 100 ? `${content.slice(0, 100)}…` : content;
     const summary = document.createElement("p");
     summary.textContent = `${typeLabels[item.memory_type] || item.memory_type} · ${scopeLabels[item.scope] || item.scope}`;
@@ -160,15 +174,15 @@ function renderList(items) {
       const warning = document.createElement("button");
       warning.type = "button";
       warning.className = "conflict-link";
-      warning.textContent = `⚠ 可能冲突（${item.conflict_count}）`;
-      warning.setAttribute("aria-label", `查看 ${item.conflict_count} 条可能冲突记忆`);
+      warning.textContent = `⚠ 可能的冲突或重复（${item.conflict_count}）`;
+      warning.setAttribute("aria-label", `查看 ${item.conflict_count} 条可能的冲突或重复记忆`);
       warning.addEventListener("click", (event) => {
         event.stopPropagation();
         showConflicts(item);
       });
       summary.append(document.createTextNode(" · "), warning);
     }
-    card.append(badge, title, summary);
+    card.append(head, title, summary);
     list.appendChild(card);
   }
 }
@@ -280,7 +294,7 @@ async function createMemory(event) {
     await searchMemories();
     await selectMemory(record.memory_id);
     if (record.requires_confirmation) {
-      setMessage(`发现 ${record.conflicts.length} 条可能冲突的记忆，请在确认替换前查看详情。`, true);
+      setMessage(`发现 ${record.conflicts.length} 条可能的冲突或重复的记忆，请在确认替换前查看详情。`, true);
     }
   } catch (error) {
     alert(error.message);
